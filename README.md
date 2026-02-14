@@ -173,14 +173,53 @@ https://...**/consultation** -> Vous n'avez perdu aucun message.
 👉 Kubernetes gère tout seul : Aucun impact sur les données ou sur votre service (PVC conserve la DB et le pod est reconstruit automatiquement) -> **C'est du PCA**. Tout est automatique et il n'y a aucune rupture de service.
   
 ---------------------------------------------------
-🎬 **Scénario 2 : PRA - Perte du PVC pra-date**🔥 
-Nous allons dans ce scénario **détruire notre PVC pra-data**. C'est à dire nous allons suprimer la base de données en production. Ceci simulera par exemple la corruption de la BDD SQLite, le disque du node perdu, une erreur humaine, etc.
-💥 Impact : IL s'agit ici d'un impact important puisque la BDD est perdue.  
+🎬 **Scénario 2 : PRA - Perte du PVC pra-date** 
+Nous allons dans ce scénario **détruire notre PVC pra-data**. C'est à dire nous allons suprimer la base de données en production. Ceci simulera par exemple la corruption de la BDD SQLite, le disque du node perdu, une erreur humaine, etc. 💥 Impact : IL s'agit ici d'un impact important puisque **la BDD est perdue**.  
 
 **Destruction du PVC pra-data :** Ci-dessous, la cible de notre scénario   
   
 ![Screenshot Actions](scenario2.png)  
 
+🔥 **PHASE 1 — Simuler le sinistre (perte du disque DB)**  
+Copier/coller le code suivant dans votre terminal Codespace pour détruire votre base de données :
+```
+kubectl -n pra scale deployment flask --replicas=0
+```
+```
+kubectl -n pra patch cronjob sqlite-backup -p '{"spec":{"suspend":true}}'
+```
+```
+kubectl -n pra delete job --all
+```
+```
+kubectl -n pra delete pvc pra-data
+```
+👉 Vous pouvez vérifier votre application en ligne, la base de données est détruite et la service n'est plus accéssible.  
+
+✅ **PHASE 2 — Procédure de restauration**  
+Recréer l’infrastructure avec un PVC pra-data vide.  
+```
+kubectl apply -f k8s/
+```
+Vérification de votre application en ligne.  
+Forward du port 8080 du service pour tester l'application en ligne.  
+```
+kubectl -n pra port-forward svc/flask 8080:80 >/tmp/web.log 2>&1 &
+```
+https://...**/count** -> =0.  
+https://...**/consultation** Vous avez perdu tous vos messages.  
+
+Retaurez votre BDD depuis le PVC Backup.  
+```
+kubectl apply -f pra/50-job-restore.yaml
+```
+👉 Vous pouvez vérifier votre application en ligne, **votre base de données a été restaureé** et tous vos messages sont bien présents.  
+
+Relance des CRON de sauvgardes.  
+```
+kubectl -n pra patch cronjob sqlite-backup -p '{"spec":{"suspend":false}}'
+```
+👉 Nous n'avons pas perdu de données mais Kubernetes ne gère pas la restauration tout seul. Nous avons du protéger nos données via des sauvegardes régulières (du PVC pra-data vers le PVC pra-backup). -> **C'est du PRA**. Il s'agit d'une stratégie de sauvegarde avec une procédure de restauration.  
 
 
 
