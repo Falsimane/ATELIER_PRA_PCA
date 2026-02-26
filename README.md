@@ -231,27 +231,78 @@ Faites preuve de pédagogie et soyez clair dans vos explications et procedures d
 **Exercice 1 :**  
 Quels sont les composants dont la perte entraîne une perte de données ?  
   
-*..Répondez à cet exercice ici..*
+Dans cet atelier, les composants critiques vis-à-vis de la donnée sont :
+
+- **Le PVC `pra-data`** : c’est le stockage principal de la base SQLite en production. Sa perte = perte de la base “courante”.
+- **Le PVC `pra-backup`** : c’est le stockage des sauvegardes. Sa perte = impossibilité de restaurer après sinistre.
+- **Les fichiers de sauvegarde eux-mêmes** (dans `pra-backup`) : si supprimés/corrompus, le PRA ne peut plus rejouer l’historique.
+
+À l’inverse, la perte d’un **pod** applicatif n’entraîne pas de perte de données, car les données sont externalisées sur des volumes persistants (PVC).
 
 **Exercice 2 :**  
 Expliquez nous pourquoi nous n'avons pas perdu les données lors de la supression du PVC pra-data  
   
-*..Répondez à cet exercice ici..*
+Nous n’avons pas perdu les données **au final** car elles existaient encore dans les sauvegardes du PVC `pra-backup`.
+
+Explication pas à pas :
+
+1. Avant le sinistre, le CronJob copie la base SQLite de `pra-data` vers `pra-backup` toutes les minutes.
+2. La suppression de `pra-data` détruit la base de production active.
+3. La restauration (`pra/50-job-restore.yaml`) recopie le dernier backup disponible vers le nouveau `pra-data`.
+4. L’application redémarre avec les données restaurées.
+
+Donc la donnée n’est pas “magiquement conservée” par Kubernetes : elle est récupérée grâce à la stratégie de sauvegarde + procédure de restauration (PRA).
 
 **Exercice 3 :**  
 Quels sont les RTO et RPO de cette solution ?  
   
-*..Répondez à cet exercice ici..*
+**RPO (Recovery Point Objective)**
+
+- Le CronJob sauvegarde **toutes les 1 minute**.
+- Donc le RPO théorique est d’environ **1 minute** (on peut perdre au maximum les écritures entre le dernier backup et le sinistre).
+
+**RTO (Recovery Time Objective)**
+
+- Le RTO dépend du temps opérateur + exécution des commandes Kubernetes : recréation des ressources, lancement du job de restauration, redémarrage du pod.
+- Dans cet atelier, il est généralement de l’ordre de **quelques minutes** (souvent ~2 à 5 min selon l’environnement).
+
+Résumé : **RPO ≈ 1 min**, **RTO ≈ quelques minutes**.
 
 **Exercice 4 :**  
 Pourquoi cette solution (cet atelier) ne peux pas être utilisé dans un vrai environnement de production ? Que manque-t-il ?   
   
-*..Répondez à cet exercice ici..*
+Cette solution est excellente pour apprendre, mais insuffisante pour une vraie production. Il manque notamment :
+
+- **Stockage réellement résilient** : ici, pas de réplication inter-zones/inter-sites ni garanties fortes de durabilité.
+- **Sauvegardes externalisées** : les backups restent dans le cluster ; en production, on veut des copies hors cluster (objet storage, autre site, immuable).
+- **Base de données adaptée à la production** : SQLite convient mal aux charges concurrentes importantes.
+- **Automatisation de reprise complète** : runbook outillé, tests de restauration réguliers, PRA industrialisé.
+- **Sécurité renforcée** : chiffrement, gestion des secrets, RBAC fin, politiques réseau, scan d’images.
+- **Observabilité/SRE** : supervision, alerting, SLI/SLO, dashboards, traçabilité d’audit.
+- **Haute disponibilité multi-sites** : PCA/PRA robuste nécessite redondance géographique et procédures de bascule.
   
 **Exercice 5 :**  
 Proposez une archtecture plus robuste.   
   
-*..Répondez à cet exercice ici..*
+Proposition d’architecture PRA/PCA plus robuste :
+
+1. **Application stateless** sur Kubernetes (plusieurs replicas) derrière un Service + Ingress.
+2. **Base de données managée et répliquée** (ex. PostgreSQL HA) au lieu de SQLite locale.
+3. **Sauvegardes versionnées et chiffrées** vers un stockage objet externe (S3/Blob), avec politique de rétention.
+4. **Réplication inter-régions / second cluster** pour bascule en cas de sinistre majeur.
+5. **GitOps + IaC** pour reconstruire l’infra rapidement (ArgoCD/Flux + Terraform/Ansible).
+6. **Tests PRA automatiques** (exercices réguliers de restauration) et mesure continue des RTO/RPO.
+7. **Sécurité & observabilité** : gestion de secrets (Vault/External Secrets), monitoring/alerting centralisé, logs centralisés.
+
+| Fonctionnalité       | Atelier (Actuel)              | Production Cible                                     |
+|----------------------|-------------------------------|------------------------------------------------------|
+| Base de données      | SQLite (Fichier local)        | PostgreSQL / MySQL Managé (RDS / Cloud SQL)          |
+| Localisation Backup  | Local au cluster (PVC)        | Stockage Objet déporté (S3, Azure Blob)              |
+| Réplication          | Aucune                        | Multi-AZ (Zones de disponibilité)                    |
+| Restauration         | Manuelle (Script)             | Automatisée (GitOps / Terraform)                     |
+
+
+Objectif : réduire simultanément le risque de perte de données, le temps d’indisponibilité, et la dépendance à des actions manuelles.
 
 ---------------------------------------------------
 Séquence 6 : Ateliers  
