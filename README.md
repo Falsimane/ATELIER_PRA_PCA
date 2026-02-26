@@ -314,7 +314,24 @@ Difficulté : Moyenne (~2 heures)
 * last_backup_file : nom du dernier backup présent dans /backup
 * backup_age_seconds : âge du dernier backup
 
-*..**Déposez ici une copie d'écran** de votre réussite..*
+✅ **Implémentation réalisée**
+
+- La route `GET /status` a été ajoutée dans l’application Flask.
+- Le déploiement Kubernetes monte désormais le volume `pra-backup` dans le pod Flask sur `/backup`.
+
+Exemple de résultat JSON attendu :
+
+```json
+{
+  "count": 3,
+  "last_backup_file": "app-1739980800.db",
+  "backup_age_seconds": 22
+}
+```
+
+Résultat : 
+
+![](image.png)
 
 ---------------------------------------------------
 ### **Atelier 2 : Choisir notre point de restauration**  
