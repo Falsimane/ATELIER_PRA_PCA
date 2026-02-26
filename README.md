@@ -337,7 +337,82 @@ Résultat :
 ### **Atelier 2 : Choisir notre point de restauration**  
 Aujourd’hui nous restaurobs “le dernier backup”. Nous souhaitons **ajouter la capacité de choisir un point de restauration**.
 
-*..Décrir ici votre procédure de restauration (votre runbook)..*  
+✅ **Implémentation réalisée**
+
+- Un second job Kubernetes a été ajouté : `pra/51-job-restore-point.yaml`.
+- Ce job restaure un backup précis via la variable `BACKUP_FILE` (ex: `app-1739980800.db`).
+
+### Runbook de restauration à un point choisi
+
+1. **Geler l’activité** (option recommandé pour éviter les écritures pendant restauration)
+
+```bash
+kubectl -n pra scale deployment flask --replicas=0
+kubectl -n pra patch cronjob sqlite-backup -p '{"spec":{"suspend":true}}'
+```
+
+2. **Lister les sauvegardes disponibles**
+
+```bash
+kubectl -n pra run debug-backup \
+  --rm -it \
+  --image=alpine \
+  --overrides='{
+    "spec": {
+      "containers": [{
+        "name": "debug",
+        "image": "alpine",
+        "command": ["sh"],
+        "stdin": true,
+        "tty": true,
+        "volumeMounts": [{
+          "name": "backup",
+          "mountPath": "/backup"
+        }]
+      }],
+      "volumes": [{
+        "name": "backup",
+        "persistentVolumeClaim": {
+          "claimName": "pra-backup"
+        }
+      }]
+    }
+  }'
+```
+
+Dans le shell du pod debug :
+
+```bash
+ls -1 /backup/*.db | sort
+exit
+```
+
+3. **Choisir le fichier** à restaurer (exemple : `app-1739980800.db`), puis éditer la valeur `BACKUP_FILE` dans `pra/51-job-restore-point.yaml`.
+
+4. **Lancer la restauration ciblée**
+
+```bash
+kubectl -n pra delete job sqlite-restore-point --ignore-not-found
+kubectl apply -f pra/51-job-restore-point.yaml
+kubectl -n pra logs -f job/sqlite-restore-point
+```
+
+5. **Redémarrer l’application et reprendre les sauvegardes**
+
+```bash
+kubectl -n pra scale deployment flask --replicas=1
+kubectl -n pra patch cronjob sqlite-backup -p '{"spec":{"suspend":false}}'
+kubectl -n pra port-forward svc/flask 8080:80 >/tmp/web.log 2>&1 &
+```
+
+6. **Vérifier le point restauré**
+
+```bash
+curl "http://127.0.0.1:8080/consultation"
+curl "http://127.0.0.1:8080/count"
+```
+
+👉 Résultat attendu : les données reflètent exactement l’état correspondant au fichier backup sélectionné.
   
 ---------------------------------------------------
 Evaluation

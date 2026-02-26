@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sqlite-restore-point
+  namespace: pra
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: restore
+          image: alpine
+          env:
+            - name: BACKUP_FILE
+              value: "app-REPLACE_ME.db"
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              TARGET="/backup/${BACKUP_FILE}"
+              if [ ! -f "$TARGET" ]; then
+                echo "Backup introuvable: $TARGET"
+                echo "Backups disponibles :"
+                ls -1 /backup/*.db || true
+                exit 1
+              fi
+              cp "$TARGET" /data/app.db
+              echo "Restauration effectuée depuis: $TARGET"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: backup
+              mountPath: /backup
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: pra-data
+        - name: backup
+          persistentVolumeClaim:
+            claimName: pra-backup
